@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   crawler:
-    image: ${DOCKER_IMAGE}
+    image: batra43pvd18/gofa-crawler:latest
     container_name: crawler-github
     volumes:
       - ./logs:/app/logs
