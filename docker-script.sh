@@ -76,6 +76,39 @@ print_header() {
     echo -e "${BLUE}=== $1 ===${NC}"
 }
 
+# Function to check if Docker daemon is running
+check_docker_running() {
+    if ! sudo docker info >/dev/null 2>&1; then
+        print_warning "Docker daemon is not running. Starting Docker service..."
+        sudo systemctl start docker
+        sleep 3
+        
+        # Check again after starting
+        if ! sudo docker info >/dev/null 2>&1; then
+            print_error "Failed to start Docker daemon!"
+            exit 1
+        else
+            print_status "Docker daemon started successfully!"
+        fi
+    else
+        print_status "Docker daemon is already running."
+    fi
+}
+
+# Function to check if containers are already running
+check_containers_running() {
+    local running_containers
+    running_containers=$(sudo docker ps --format "{{.Names}}" | grep -E "(windows|ngrok-rdp|url-display)" | wc -l)
+    
+    if [ "$running_containers" -gt 0 ]; then
+        print_status "Found $running_containers container(s) already running:"
+        sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "(windows|ngrok-rdp|url-display|NAMES)"
+        return 0  # containers are running
+    else
+        return 1  # no containers running
+    fi
+}
+
 # Check if win10.yaml exists
 check_file() {
     if [ ! -f "$COMPOSE_FILE" ]; then
@@ -112,6 +145,7 @@ show_usage() {
 # Main functions
 docker_commit_push() {
     print_header "Commit and push"
+    check_docker_running
     docker commit windows garymiltonfoster/custom-windows10:v1.0
     docker commit ngrok-rdp garymiltonfoster/custom-ngrok:v1.0
     docker commit url-display garymiltonfoster/custom-url-display:v1.0
@@ -124,7 +158,16 @@ docker_commit_push() {
 docker_up() {
     print_header "Starting Docker Containers"
     check_file
-    $DOCKER_COMPOSE_CMD up -d
+    check_docker_running
+    
+    # Check if containers are already running
+    if check_containers_running; then
+        print_warning "Some containers are already running."
+    else
+        print_status "Starting new containers..."
+        $DOCKER_COMPOSE_CMD up -d
+    fi
+    
     if [ $? -eq 0 ]; then
         print_status "Containers started successfully!"
         print_status "Windows VM will be available at: http://localhost:8006"
@@ -137,6 +180,7 @@ docker_up() {
 docker_down() {
     print_header "Stopping Docker Containers"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD down
     if [ $? -eq 0 ]; then
         print_status "Containers stopped successfully!"
@@ -148,6 +192,7 @@ docker_down() {
 docker_restart() {
     print_header "Restarting Docker Containers"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD down
     sleep 2
     $DOCKER_COMPOSE_CMD up -d
@@ -161,18 +206,21 @@ docker_restart() {
 docker_logs() {
     print_header "Showing Docker Logs (Press Ctrl+C to exit)"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD logs -f
 }
 
 docker_logs_static() {
     print_header "Showing Docker Logs (Static)"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD logs --tail=50
 }
 
 docker_status() {
     print_header "Container Status"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD ps
     echo ""
     print_status "All containers:"
@@ -182,18 +230,21 @@ docker_status() {
 docker_pull() {
     print_header "Pulling Latest Images"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD pull
 }
 
 docker_build() {
     print_header "Building Containers"
     check_file
+    check_docker_running
     $DOCKER_COMPOSE_CMD build
 }
 
 docker_clean() {
     print_header "Cleaning Up (Stop + Remove Volumes)"
     check_file
+    check_docker_running
     print_warning "This will remove all containers and volumes!"
     read -p "Are you sure? (y/N): " -n 1 -r
     echo
